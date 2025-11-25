@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大宗匯款印單小幫手 (v8.1 邏輯修正版)</title>
+    <title>大宗郵政跨行匯款小幫手</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -300,8 +300,30 @@
             const handleVendorSubmit = (e) => {
                 e.preventDefault();
                 if (editingVendorId) {
+                    // 1. 更新廠商資料庫 (左側)
                     setPayees(prev => prev.map(p => p.id === editingVendorId ? { ...p, ...vendorForm } : p));
-                    alert("更新成功");
+                    
+                    // 2. 同步更新匯款清單中「來自該廠商」的項目 (右側)
+                    // 條件：清單項目的 vendorId 與正在編輯的廠商 ID 相同
+                    setBatchItems(prev => prev.map(item => {
+                        if (item.vendorId === editingVendorId) {
+                            return {
+                                ...item,
+                                name: vendorForm.name,
+                                bank: vendorForm.bank,
+                                branch: vendorForm.branch,
+                                code: vendorForm.code,
+                                account: vendorForm.account,
+                                // 保持原本的 unique ID 和金額不變
+                                id: item.id,
+                                amount: item.amount,
+                                vendorId: item.vendorId
+                            };
+                        }
+                        return item;
+                    }));
+
+                    alert("更新成功！清單中的相關項目已同步修正。");
                     handleCancelEdit();
                 } else {
                     setPayees(prev => [...prev, { id: Date.now(), ...vendorForm }]);
@@ -341,12 +363,12 @@
 
             const handleAddItem = () => {
                 if (!selectedPayeeData || !amount) return;
-                // 關鍵修正: 確保每一筆加入的資料都有一個新的、獨立的 ID (Timestamp)
-                // 這樣即使是同廠商同金額，也會被視為不同的項目
+                // 關鍵修改：加入 vendorId 欄位，用來連結原始廠商
                 const newItem = {
                     ...selectedPayeeData,
+                    vendorId: selectedPayeeData.id, // 記錄來源廠商 ID
                     amount: amount,
-                    id: Date.now() // 讓這個 ID 覆蓋掉原本 selectedPayeeData 的廠商 ID
+                    id: Date.now() // 每一筆清單項目獨一無二的 ID
                 };
                 setBatchItems([...batchItems, newItem]);
                 setAmount('');
@@ -365,7 +387,7 @@
                                 <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                                     <IconUsers /> 大宗匯款印單小幫手
                                 </h1>
-                                <p className="text-sm text-gray-500 mt-1">v8.1 (邏輯修正版：獨立ID)</p>
+                                <p className="text-sm text-gray-500 mt-1">v9.0 (資料連動修正版)</p>
                             </div>
                             <div className="text-right text-sm text-gray-500 bg-gray-50 px-4 py-2 rounded-lg w-full md:w-auto">
                                 <div className="flex justify-between md:block"><span>目前筆數:</span> <span className="font-bold text-blue-600 text-lg ml-2">{batchItems.length}</span></div>
