@@ -1,2 +1,551 @@
-Hello World!
-postal-bulk-remit
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大宗匯款印單小幫手 (v6.2 循環修正版)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/cpexcel.full.min.js"></script>
+
+    <style>
+        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f3f4f6; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .vendor-item { transition: all 0.2s ease; cursor: pointer; }
+        .vendor-item.active { background-color: #eff6ff; border-color: #3b82f6; transform: translateX(4px); }
+        
+        /* Toggle Switch CSS */
+        .toggle-checkbox:checked { right: 0; border-color: #3b82f6; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef } = React;
+
+        // --- Icons ---
+        const IconPlus = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>;
+        const IconTrash = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>;
+        const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>;
+        const IconUpload = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>;
+        const IconSettings = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 0 1 0 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>;
+        const IconUsers = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>;
+        const IconArrow = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>;
+        const IconDisk = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>;
+        const IconClose = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>;
+        const IconDatabase = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" /></svg>;
+
+        const App = () => {
+            // --- Default Data (Empty for Privacy) ---
+            const defaultPayees = [];
+            
+            const defaultSettings = {
+                remitterName: '', remitterId: '', remitterZip: '',
+                remitterAddr: '', remitterPhone: '',
+                agentName: '', agentId: '', agentPhone: ''
+            };
+
+            // --- Storage Preference (Default False/Closed) ---
+            const getStoragePref = () => {
+                const pref = localStorage.getItem('remit_pref_storage');
+                return pref === 'true';
+            };
+
+            const [storageEnabled, setStorageEnabled] = useState(getStoragePref);
+
+            // --- State Management ---
+            const [payees, setPayees] = useState(() => {
+                if (!getStoragePref()) return defaultPayees;
+                const saved = localStorage.getItem('remit_payees');
+                return saved ? JSON.parse(saved) : defaultPayees;
+            });
+
+            const [settings, setSettings] = useState(() => {
+                if (!getStoragePref()) return defaultSettings;
+                const saved = localStorage.getItem('remit_settings');
+                return saved ? JSON.parse(saved) : defaultSettings;
+            });
+
+            // Hidden Options
+            const [padCode] = useState(false);
+            const [padAccount] = useState(false);
+
+            // UI State
+            const [vendorForm, setVendorForm] = useState({ name: '', bank: '', branch: '', code: '', account: '' });
+            const [editingVendorId, setEditingVendorId] = useState(null);
+            const [batchItems, setBatchItems] = useState([]);
+            const [selectedPayeeId, setSelectedPayeeId] = useState('');
+            const [amount, setAmount] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+            
+            // Accordion Toggles
+            const [isBackupOpen, setIsBackupOpen] = useState(true);
+            const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+            const [isVendorMgrOpen, setIsVendorMgrOpen] = useState(true);
+
+            // Refs
+            const jsonInputRef = useRef(null);
+            const batchFileInputRef = useRef(null);
+
+            // --- Persistence Effects ---
+            
+            useEffect(() => {
+                localStorage.setItem('remit_pref_storage', storageEnabled);
+                if (!storageEnabled) {
+                    localStorage.removeItem('remit_payees');
+                    localStorage.removeItem('remit_settings');
+                } else {
+                    localStorage.setItem('remit_payees', JSON.stringify(payees));
+                    localStorage.setItem('remit_settings', JSON.stringify(settings));
+                }
+            }, [storageEnabled]);
+
+            useEffect(() => {
+                if (storageEnabled) {
+                    localStorage.setItem('remit_payees', JSON.stringify(payees));
+                }
+            }, [payees, storageEnabled]);
+
+            useEffect(() => {
+                if (storageEnabled) {
+                    localStorage.setItem('remit_settings', JSON.stringify(settings));
+                }
+            }, [settings, storageEnabled]);
+
+            // --- Helper Functions ---
+            const padLeft = (str, len) => {
+                const s = String(str || "");
+                if (s.length >= len) return s;
+                return "0".repeat(len - s.length) + s;
+            };
+
+            const s2ab = (s) => {
+                const buf = new ArrayBuffer(s.length);
+                const view = new Uint8Array(buf);
+                for (let i = 0; i !== s.length; ++i) view[i] = s.charCodeAt(i) & 0xFF;
+                return buf;
+            };
+
+            // --- Export CSV Logic ---
+            const handleExportBig5CSV = () => {
+                if(batchItems.length === 0) return;
+                let headers = ["NO", "Payee", "Bank", "Branch", "Code", "Acct", "AcctSp", "Amt", "RName", "RID", "RZip", "RAddr", "RTel", "AName", "AID", "ATel"];
+                for(let i=1; i<=5; i++) headers.push(`RZip_${i}`); 
+                for(let i=1; i<=7; i++) headers.push(`B${i}`);     
+                for(let i=1; i<=14; i++) headers.push(`A${i}`);
+                let data = [headers];
+
+                batchItems.forEach((item, index) => {
+                    const rawCode = String(item.code || "");
+                    const rawAcc = String(item.account || "");
+                    const codeToUse = padCode ? padLeft(rawCode, 7) : rawCode;
+                    const accountToUse = padAccount ? padLeft(rawAcc, 14) : rawAcc;
+                    const fullCodeForSplit = padLeft(rawCode, 7);
+                    const fullAccountForSplit = padLeft(rawAcc, 14);
+                    const spacedAccount = accountToUse.split('').join(' ');
+                    const pageNo = (index % 7) + 1;
+                    const rawZip = String(settings.remitterZip || "");
+                    const cleanZip = rawZip.replace(/[^0-9]/g, ''); 
+                    const rawAmt = String(item.amount).replace(/[^0-9]/g, '');
+
+                    let rowData = [
+                        pageNo, item.name, item.bank, item.branch, codeToUse, accountToUse, spacedAccount, rawAmt,
+                        settings.remitterName, settings.remitterId, rawZip, settings.remitterAddr, settings.remitterPhone,
+                        settings.agentName, settings.agentId, settings.agentPhone
+                    ];
+                    for(let i=0; i<5; i++) rowData.push(cleanZip[i] || '');
+                    for(let i=0; i<7; i++) rowData.push(fullCodeForSplit[i] || '');
+                    for(let i=0; i<14; i++) rowData.push(fullAccountForSplit[i] || '');
+                    data.push(rowData);
+                });
+
+                const remainder = batchItems.length % 7;
+                if (remainder !== 0) {
+                    const emptyRows = 7 - remainder;
+                    const rawZip = String(settings.remitterZip || "");
+                    const cleanZip = rawZip.replace(/[^0-9]/g, '');
+                    for (let i = 0; i < emptyRows; i++) {
+                        const pageNo = remainder + i + 1;
+                        let emptyRowData = [pageNo, "", "", "", "", "", "", "", settings.remitterName, settings.remitterId, rawZip, settings.remitterAddr, settings.remitterPhone, settings.agentName, settings.agentId, settings.agentPhone];
+                        for(let j=0; j<5; j++) emptyRowData.push(cleanZip[j] || '');
+                        for(let j=0; j<21; j++) emptyRowData.push("");
+                        data.push(emptyRowData);
+                    }
+                }
+                try {
+                    const wb = XLSX.utils.book_new();
+                    const ws = XLSX.utils.aoa_to_sheet(data);
+                    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+                    const csvOutput = XLSX.write(wb, { bookType: 'csv', type: 'binary', codepage: 950 });
+                    const blob = new Blob([s2ab(csvOutput)], { type: "text/csv" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `匯款資料_${new Date().toISOString().slice(0,10)}_Big5.csv`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } catch (e) { alert("匯出失敗：" + e.message); }
+            };
+
+            // --- IMPORT CSV Logic (Load back exported file) ---
+            const handleImportBatchCSV = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const wb = XLSX.read(evt.target.result, {type:'binary', codepage: 950});
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const data = XLSX.utils.sheet_to_json(ws, {header: 1});
+                        const newItems = [];
+                        // Start from index 1 (skip header)
+                        // CSV Columns: 0:NO, 1:Payee, 2:Bank, 3:Branch, 4:Code, 5:Acct, 6:AcctSp, 7:Amt
+                        for(let i=1; i<data.length; i++) {
+                            const row = data[i];
+                            if(row.length > 7 && row[1]) {
+                                newItems.push({
+                                    id: Date.now() + i,
+                                    name: row[1],
+                                    bank: row[2] || '',
+                                    branch: row[3] || '',
+                                    code: String(row[4] || ''),
+                                    account: String(row[5] || ''),
+                                    amount: String(row[7] || '').replace(/[^0-9]/g, '')
+                                });
+                            }
+                        }
+                        if(newItems.length > 0) {
+                            if(confirm(`成功讀取 ${newItems.length} 筆資料。確定匯入嗎？(將附加在目前清單後)`)) {
+                                setBatchItems(prev => [...prev, ...newItems]);
+                            }
+                        } else {
+                            alert("讀取不到有效資料，請確認檔案是否正確。");
+                        }
+                    } catch(err) {
+                        alert("匯入失敗：" + err.message);
+                    }
+                    e.target.value = '';
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            // --- System Backup/Restore ---
+            const handleBackupSystem = () => {
+                const backupData = { version: "1.0", timestamp: new Date().toISOString(), settings: settings, payees: payees };
+                const blob = new Blob([JSON.stringify(backupData, null, 2)], {type: "application/json"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `系統備份_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+            };
+
+            const handleRestoreSystem = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const data = JSON.parse(evt.target.result);
+                        if(data.settings && data.payees) {
+                            if(confirm(`確定還原備份？\n包含 ${data.payees.length} 筆廠商資料與匯款人設定。`)) {
+                                setSettings(data.settings);
+                                setPayees(data.payees);
+                                alert("還原成功！");
+                            }
+                        } else { alert("檔案格式錯誤"); }
+                    } catch(err) { alert("解析失敗"); }
+                    e.target.value = '';
+                };
+                reader.readAsText(file);
+            };
+
+            // --- Vendor CRUD ---
+            const handleVendorFormChange = (e) => setVendorForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+            const handleVendorSubmit = (e) => {
+                e.preventDefault();
+                if (editingVendorId) {
+                    setPayees(prev => prev.map(p => p.id === editingVendorId ? { ...p, ...vendorForm } : p));
+                    alert("更新成功");
+                    handleCancelEdit();
+                } else {
+                    setPayees(prev => [...prev, { id: Date.now(), ...vendorForm }]);
+                    setVendorForm({ name: '', bank: '', branch: '', code: '', account: '' });
+                }
+            };
+            const handleVendorClick = (payee) => {
+                if (editingVendorId === payee.id) handleCancelEdit();
+                else {
+                    setEditingVendorId(payee.id);
+                    setVendorForm({ name: payee.name, bank: payee.bank, branch: payee.branch, code: payee.code, account: payee.account });
+                }
+            };
+            const handleCancelEdit = () => {
+                setEditingVendorId(null);
+                setVendorForm({ name: '', bank: '', branch: '', code: '', account: '' });
+            };
+            const handleDeletePayee = (e, id) => {
+                e.stopPropagation();
+                if(confirm("確定刪除此廠商？")) {
+                    setPayees(payees.filter(p => p.id !== id));
+                    if(id === editingVendorId) handleCancelEdit();
+                    if(String(id) === selectedPayeeId) setSelectedPayeeId('');
+                }
+            };
+
+            // --- Main Logic ---
+            const filteredPayees = useMemo(() => {
+                if (!searchTerm) return payees;
+                const lowerTerm = searchTerm.toLowerCase();
+                return payees.filter(p => (p.name && p.name.toLowerCase().includes(lowerTerm)) || (p.bank && p.bank.toLowerCase().includes(lowerTerm)));
+            }, [payees, searchTerm]);
+            const selectedPayeeData = useMemo(() => payees.find(p => p.id === parseInt(selectedPayeeId)), [selectedPayeeId, payees]);
+            const handleAddItem = () => {
+                if (!selectedPayeeData || !amount) return;
+                setBatchItems([...batchItems, { id: Date.now(), ...selectedPayeeData, amount: amount }]);
+                setAmount('');
+            };
+            const handleRemoveItem = (id) => setBatchItems(batchItems.filter(item => item.id !== id));
+            const handleClearBatch = () => { if(window.confirm('確定清空今日匯款清單?')) setBatchItems([]); };
+            const handleSettingChange = (k, v) => setSettings(p => ({...p, [k]: v}));
+
+            return (
+                <div className="min-h-screen bg-gray-100 p-4 font-sans text-gray-800 pb-20">
+                    <div className="max-w-6xl mx-auto space-y-6">
+                        {/* Header */}
+                        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-600 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div>
+                                <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                                    <IconUsers /> 大宗匯款印單小幫手
+                                </h1>
+                                <p className="text-sm text-gray-500 mt-1">v6.2 (資安嚴格版 + 匯入修正)</p>
+                            </div>
+                            <div className="text-right text-sm text-gray-500 bg-gray-50 px-4 py-2 rounded-lg w-full md:w-auto">
+                                <div className="flex justify-between md:block"><span>目前筆數:</span> <span className="font-bold text-blue-600 text-lg ml-2">{batchItems.length}</span></div>
+                                <div className="flex justify-between md:block"><span>預計頁數:</span> <span className="font-bold text-gray-800 ml-2">{Math.ceil(batchItems.length / 7)}</span></div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Left Column (Controls) */}
+                            <div className="lg:col-span-4 space-y-4">
+                                
+                                {/* 1. Data Loading & Backup Settings */}
+                                <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100 ring-2 ring-blue-50">
+                                    <button onClick={() => setIsBackupOpen(!isBackupOpen)} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-700 font-bold">
+                                        <div className="flex items-center gap-2"><IconDatabase /> 資料載入與備份設定</div>
+                                        <div className={`transition-transform ${isBackupOpen ? 'rotate-90' : ''}`}><IconArrow /></div>
+                                    </button>
+                                    {isBackupOpen && (
+                                        <div className="p-4 space-y-4 border-t border-gray-100">
+                                            
+                                            {/* Local Storage Toggle */}
+                                            <div className={`p-3 rounded-lg border flex flex-col gap-2 transition-colors ${storageEnabled ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                                                <div className="flex justify-between items-center">
+                                                    <span className={`font-bold text-sm ${storageEnabled ? 'text-green-800' : 'text-red-800'}`}>
+                                                        {storageEnabled ? '已啟用瀏覽器暫存 (Local Storage)' : '已停用瀏覽器暫存 (記憶體模式)'}
+                                                    </span>
+                                                    <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                                                        <input type="checkbox" name="toggle" id="toggle" className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 ease-in-out" 
+                                                            checked={storageEnabled} 
+                                                            onChange={(e) => setStorageEnabled(e.target.checked)}
+                                                            style={{
+                                                                right: storageEnabled ? '0' : 'unset',
+                                                                left: storageEnabled ? 'unset' : '0',
+                                                                borderColor: storageEnabled ? '#16a34a' : '#ef4444'
+                                                            }}
+                                                        />
+                                                        <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer border ${storageEnabled ? 'bg-green-500 border-green-500' : 'bg-gray-300 border-gray-300'}`}></label>
+                                                    </div>
+                                                </div>
+                                                <div className="text-xs text-gray-500">
+                                                    {storageEnabled ? 
+                                                        '資料會自動儲存在此電腦的瀏覽器中，關閉視窗後資料仍在。' : 
+                                                        '安全模式：資料僅暫存於記憶體，關閉視窗或重新整理後將立即清除。適合公用電腦。'}
+                                                </div>
+                                            </div>
+
+                                            {/* Import/Export Buttons */}
+                                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-sm">
+                                                <div className="font-bold text-blue-800 mb-2">全系統備份 (廠商 + 設定)</div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={handleBackupSystem} className="flex-1 bg-white text-blue-700 border border-blue-200 py-2 rounded font-bold hover:bg-blue-50 shadow-sm">匯出 JSON</button>
+                                                    <button onClick={() => jsonInputRef.current.click()} className="flex-1 bg-blue-600 text-white border border-blue-600 py-2 rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-1 shadow-sm"><IconUpload/> 載入 JSON</button>
+                                                    <input type="file" ref={jsonInputRef} onChange={handleRestoreSystem} className="hidden" accept=".json" />
+                                                </div>
+                                                <p className="text-[10px] text-blue-400 mt-2">提示：若停用暫存，建議離開前匯出 JSON 備份至您的隨身碟。</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 2. Settings */}
+                                <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                                    <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-700 font-bold">
+                                        <div className="flex items-center gap-2"><IconSettings /> 匯款人設定</div>
+                                        <div className={`transition-transform ${isSettingsOpen ? 'rotate-90' : ''}`}><IconArrow /></div>
+                                    </button>
+                                    {isSettingsOpen && (
+                                        <div className="p-5 space-y-3 text-sm border-t border-gray-100">
+                                            <div className="font-bold text-blue-600">匯款人</div>
+                                            <input type="text" value={settings.remitterName} onChange={(e)=>handleSettingChange('remitterName', e.target.value)} className="w-full border p-2 rounded" placeholder="名稱" />
+                                            <input type="text" value={settings.remitterId} onChange={(e)=>handleSettingChange('remitterId', e.target.value)} className="w-full border p-2 rounded" placeholder="統編" />
+                                            <input type="text" value={settings.remitterPhone} onChange={(e)=>handleSettingChange('remitterPhone', e.target.value)} className="w-full border p-2 rounded" placeholder="電話" />
+                                            <div className="flex gap-2">
+                                                <input type="text" value={settings.remitterZip} onChange={(e)=>handleSettingChange('remitterZip', e.target.value)} className="w-1/3 border p-2 rounded" placeholder="郵遞" />
+                                                <input type="text" value={settings.remitterAddr} onChange={(e)=>handleSettingChange('remitterAddr', e.target.value)} className="w-2/3 border p-2 rounded" placeholder="地址" />
+                                            </div>
+                                            <div className="border-t pt-2 font-bold text-green-600">代理人</div>
+                                            <input type="text" value={settings.agentName} onChange={(e)=>handleSettingChange('agentName', e.target.value)} className="w-full border p-2 rounded" placeholder="姓名" />
+                                            <input type="text" value={settings.agentId} onChange={(e)=>handleSettingChange('agentId', e.target.value)} className="w-full border p-2 rounded" placeholder="身分證" />
+                                            <input type="text" value={settings.agentPhone} onChange={(e)=>handleSettingChange('agentPhone', e.target.value)} className="w-full border p-2 rounded" placeholder="電話" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 3. Vendor Management */}
+                                <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                                    <button onClick={() => setIsVendorMgrOpen(!isVendorMgrOpen)} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-700 font-bold">
+                                        <div className="flex items-center gap-2"><IconDisk /> 廠商資料庫管理</div>
+                                        <div className={`transition-transform ${isVendorMgrOpen ? 'rotate-90' : ''}`}><IconArrow /></div>
+                                    </button>
+                                    {isVendorMgrOpen && (
+                                        <div className="p-4 space-y-4 border-t border-gray-100">
+                                            <form onSubmit={handleVendorSubmit} className={`space-y-2 p-3 rounded border text-sm transition-colors ${editingVendorId ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <div className={`font-bold ${editingVendorId ? 'text-orange-700' : 'text-gray-600'}`}>{editingVendorId ? '編輯廠商模式' : '手動新增廠商'}</div>
+                                                    {editingVendorId && <button type="button" onClick={handleCancelEdit} className="text-xs bg-white border px-2 py-1 rounded text-gray-500 hover:text-gray-700 flex items-center gap-1"><IconClose /> 取消</button>}
+                                                </div>
+                                                <input name="name" value={vendorForm.name} onChange={handleVendorFormChange} required className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none" placeholder="廠商名稱" />
+                                                <div className="flex gap-2">
+                                                    <input name="bank" value={vendorForm.bank} onChange={handleVendorFormChange} required className="w-1/2 p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none" placeholder="銀行名" />
+                                                    <input name="branch" value={vendorForm.branch} onChange={handleVendorFormChange} className="w-1/2 p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none" placeholder="分行名" />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <input name="code" value={vendorForm.code} onChange={handleVendorFormChange} className="w-1/3 p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none" placeholder="代碼" />
+                                                    <input name="account" value={vendorForm.account} onChange={handleVendorFormChange} required className="w-2/3 p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none" placeholder="帳號" />
+                                                </div>
+                                                <button type="submit" className={`w-full py-1.5 rounded font-bold text-white transition-colors ${editingVendorId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-gray-700 hover:bg-gray-800'}`}>{editingVendorId ? '儲存修改' : '新增'}</button>
+                                            </form>
+
+                                            <div className="max-h-56 overflow-y-auto border rounded text-sm bg-white">
+                                                {payees.length === 0 && <div className="p-4 text-center text-gray-400">無資料 (請匯入備份或手動新增)</div>}
+                                                {payees.map(p => (
+                                                    <div key={p.id} onClick={() => handleVendorClick(p)} className={`vendor-item flex justify-between items-center p-2 border-b last:border-0 group ${editingVendorId === p.id ? 'active' : 'hover:bg-gray-50'}`}>
+                                                        <div className="overflow-hidden">
+                                                            <div className={`font-bold truncate ${editingVendorId === p.id ? 'text-blue-700' : 'text-gray-800'}`}>{p.name}</div>
+                                                            <div className="text-xs text-gray-500 truncate">{p.bank} ({p.code}) - {p.account}</div>
+                                                        </div>
+                                                        <button onClick={(e) => handleDeletePayee(e, p.id)} className={`p-2 rounded-full transition-colors ${editingVendorId === p.id ? 'text-red-400 hover:bg-red-100' : 'text-gray-300 hover:text-red-500 group-hover:bg-gray-100'}`}><IconTrash /></button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 4. Main Input Form */}
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-blue-100 relative">
+                                    <div className="absolute top-0 right-0 bg-blue-600 text-white text-xs px-2 py-1 rounded-bl-lg font-bold">輸入區</div>
+                                    <h2 className="font-bold text-blue-800 mb-4 flex items-center gap-2"><IconPlus /> 新增匯款項目</h2>
+                                    <div className="space-y-4">
+                                        <div className="relative"><input type="text" className="w-full p-2 border rounded-lg text-sm bg-gray-50" placeholder="搜尋廠商..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                                        <select value={selectedPayeeId} onChange={(e) => setSelectedPayeeId(e.target.value)} className="w-full border p-2 rounded-lg text-sm" size={filteredPayees.length > 5 ? 5 : 1}>
+                                            <option value="">-- 請選擇廠商 --</option>
+                                            {filteredPayees.map(p => <option key={p.id} value={p.id}>{p.name} ({p.bank})</option>)}
+                                        </select>
+                                        
+                                        {selectedPayeeData ? (
+                                            <div className="bg-blue-50 p-3 rounded-lg text-xs space-y-1 border border-blue-100 shadow-inner">
+                                                <div className="font-bold text-blue-900 border-b border-blue-200 pb-1 mb-1">{selectedPayeeData.name}</div>
+                                                <div className="flex justify-between text-blue-800"><span>銀行:</span> <span>{selectedPayeeData.code} {selectedPayeeData.bank}</span></div>
+                                                <div className="flex justify-between text-blue-800"><span>分行:</span> <span>{selectedPayeeData.branch}</span></div>
+                                                <div className="flex justify-between text-blue-800"><span>帳號:</span> <span className="font-mono font-bold tracking-wider">{selectedPayeeData.account}</span></div>
+                                            </div>
+                                        ) : (
+                                            <div className="h-20 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400 text-xs border border-dashed border-gray-300">請先選擇廠商</div>
+                                        )}
+
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-2 text-gray-400 font-bold">$</span>
+                                            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddItem()} className="w-full border rounded-lg pl-7 p-2 font-bold focus:ring-2 focus:ring-blue-500 outline-none" placeholder="金額" />
+                                        </div>
+                                        <button onClick={handleAddItem} disabled={!selectedPayeeData || !amount} className={`w-full py-3 rounded-lg font-bold text-white flex justify-center items-center gap-2 transition-all ${!selectedPayeeData || !amount ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'}`}>
+                                            <IconPlus /> 加入清單
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Right Column (List & Action) */}
+                            <div className="lg:col-span-8 flex flex-col h-full space-y-4">
+                                <div className="bg-white rounded-xl shadow-sm flex-grow flex flex-col overflow-hidden border border-gray-200 min-h-[500px]">
+                                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                                        <h2 className="font-bold text-gray-700 flex items-center gap-2">今日匯款清單預覽</h2>
+                                        <div className="flex gap-2">
+                                            <button onClick={()=>batchFileInputRef.current.click()} className="text-blue-500 hover:bg-blue-50 px-2 py-1 rounded text-xs font-bold flex items-center gap-1"><IconUpload /> 載入 CSV</button>
+                                            <input type="file" className="hidden" ref={batchFileInputRef} onChange={handleImportBatchCSV} accept=".csv" />
+                                            {batchItems.length > 0 && <button onClick={handleClearBatch} className="text-red-500 hover:bg-red-50 px-3 py-1 rounded text-xs font-bold flex items-center gap-1"><IconTrash /> 清空</button>}
+                                        </div>
+                                    </div>
+                                    <div className="overflow-y-auto flex-grow p-0 relative">
+                                        {batchItems.length === 0 ? (
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300"><p>尚未加入任何項目</p></div>
+                                        ) : (
+                                            <table className="min-w-full divide-y divide-gray-100">
+                                                <thead className="bg-gray-50 sticky top-0 shadow-sm z-10">
+                                                    <tr>
+                                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 w-12">序</th>
+                                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500">廠商</th>
+                                                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-500">代碼 / 銀行</th>
+                                                        <th className="px-4 py-3 text-right text-xs font-bold text-gray-500">金額</th>
+                                                        <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 w-12">刪</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 bg-white">
+                                                    {batchItems.map((item, index) => (
+                                                        <tr key={item.id} className="hover:bg-blue-50 transition-colors">
+                                                            <td className="px-4 py-3 text-xs text-gray-400 font-mono">{(index%7)+1}</td>
+                                                            <td className="px-4 py-3 text-sm font-medium text-gray-800">{item.name}</td>
+                                                            <td className="px-4 py-3 text-xs text-gray-500">
+                                                                <span className="font-bold text-blue-700 mr-2">{item.code}</span>
+                                                                {item.bank} <span className="text-gray-400">({item.branch})</span>
+                                                                <div className="font-mono text-gray-400 text-[10px]">{item.account}</div>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right text-sm font-bold text-blue-600 tracking-wide">${parseInt(item.amount).toLocaleString()}</td>
+                                                            <td className="px-4 py-3 text-center"><button onClick={() => handleRemoveItem(item.id)} className="text-gray-300 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"><IconTrash /></button></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                                    <button onClick={handleExportBig5CSV} disabled={batchItems.length === 0} className={`w-full py-4 rounded-xl font-bold text-white flex justify-center items-center gap-2 text-lg shadow-lg transform transition-all active:scale-95 ${batchItems.length === 0 ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 hover:shadow-green-200'}`}>
+                                        <IconDownload /> 下載 Word 合併列印檔 (.csv)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
