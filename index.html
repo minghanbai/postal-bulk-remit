@@ -3,15 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大宗郵政跨行匯款小幫手</title>
+    <title>大宗匯款印單小幫手 (v19.9)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- React & Babel -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Excel (SheetJS) -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+    <!-- Word Generation Libraries (Docxtemplater, PizZip, FileSaver) -->
+    <script src="https://unpkg.com/pizzip@3.1.4/dist/pizzip.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.37.11/docxtemplater.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js"></script>
 
     <style>
         body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f3f4f6; }
@@ -61,6 +68,7 @@
                 remitterAddr: '', remitterPhone: '',
                 agentName: '', agentId: '', agentPhone: ''
             };
+            const TEMPLATE_FILENAME = "template.docx";
 
             const getStoragePref = () => {
                 const pref = localStorage.getItem('remit_pref_storage');
@@ -117,9 +125,6 @@
                 return saved !== null ? JSON.parse(saved) : false;
             });
 
-            const [padCode] = useState(false);
-            const [padAccount] = useState(false);
-
             const [vendorForm, setVendorForm] = useState({ name: '', bank: '', branch: '', code: '', account: '' });
             const [editingVendorId, setEditingVendorId] = useState(null);
             const [selectedPayeeId, setSelectedPayeeId] = useState('');
@@ -129,6 +134,7 @@
             const jsonInputRef = useRef(null);
             const batchFileInputRef = useRef(null);
             const vendorFileInputRef = useRef(null);
+            const templateInputRef = useRef(null); // Fallback for Word template
 
             // --- Persistence Effects ---
             useEffect(() => {
@@ -200,32 +206,15 @@
                 }
             };
 
-            const cleanCode = (raw) => {
-                let s = String(raw || "").trim();
-                // 智慧補零：如果代碼小於3碼且不為空，補足3碼 (例如 13 -> 013)
-                if (s.length > 0 && s.length < 3) {
-                    s = s.padStart(3, '0');
-                }
-                return s;
-            };
-
-            const cleanAccount = (raw) => {
-                return String(raw || "").trim();
-            };
-            
-            // 用於匯出 CSV 時強制 Excel 顯示為字串 (避免吃掉前面的 0)
-            // 格式： ="0123"
-            const formatForExcel = (val) => {
-                if (!val) return "";
-                return `="${val}"`;
-            };
+            const cleanCode = (raw) => String(raw || "").trim();
+            const cleanAccount = (raw) => String(raw || "").trim();
+            const formatForExcel = (val) => val ? `="${val}"` : "";
 
             const handleExportCSV = () => {
-                if (!userManuallyClosedInstructions) {
-                    setIsInstructionsOpen(true);
-                }
-
+                if (!userManuallyClosedInstructions) setIsInstructionsOpen(true);
                 if(batchItems.length === 0) return;
+                
+                // Logic kept from original
                 let headers = ["NO", "Payee", "Bank", "Branch", "Code", "Acct", "AcctSp", "Amt", "RName", "RID", "RZip", "RAddr", "RTel", "AName", "AID", "ATel"];
                 for(let i=1; i<=5; i++) headers.push(`RZip_${i}`); 
                 for(let i=1; i<=7; i++) headers.push(`B${i}`);     
@@ -235,44 +224,26 @@
                 batchItems.forEach((item, index) => {
                     const rawCode = String(item.code || "");
                     const rawAcc = String(item.account || "");
-                    
-                    // 這裡的 codeToUse 和 accountToUse 用於拆解單字 (B1, B2...)
-                    const codeToUse = rawCode; 
-                    const accountToUse = rawAcc;
-                    
-                    // 這裡產生一個用於「直接顯示」的欄位，強制加上 Excel 文字格式
-                    const excelSafeCode = formatForExcel(codeToUse);
-                    const excelSafeAccount = formatForExcel(accountToUse);
-
-                    const spacedAccount = accountToUse.split('').join(' ');
+                    const excelSafeCode = formatForExcel(rawCode);
+                    const excelSafeAccount = formatForExcel(rawAcc);
+                    const spacedAccount = rawAcc.split('').join(' ');
                     const pageNo = (index % 7) + 1;
                     const rawZip = String(settings.remitterZip || "");
                     const cleanZip = rawZip.replace(/[^0-9]/g, ''); 
                     const rawAmt = String(item.amount).replace(/[^0-9]/g, '');
 
                     let rowData = [
-                        pageNo, 
-                        item.name, 
-                        item.bank, 
-                        item.branch, 
-                        excelSafeCode,    // 修改：使用 ="013" 格式
-                        excelSafeAccount, // 修改：使用 ="012345" 格式
-                        spacedAccount, 
-                        rawAmt,
+                        pageNo, item.name, item.bank, item.branch, excelSafeCode, excelSafeAccount, spacedAccount, rawAmt,
                         settings.remitterName, settings.remitterId, rawZip, settings.remitterAddr, settings.remitterPhone,
                         settings.agentName, settings.agentId, settings.agentPhone
                     ];
-                    
-                    for(let i=0; i<5; i++) {
-                        rowData.push(cleanZip[i] || ' ');
-                    }
-
-                    // 拆解欄位不需要 excel 格式，因為它們是單一字元
-                    for(let i=0; i<7; i++) rowData.push(codeToUse[i] || '');
-                    for(let i=0; i<14; i++) rowData.push(accountToUse[i] || '');
+                    for(let i=0; i<5; i++) rowData.push(cleanZip[i] || ' ');
+                    for(let i=0; i<7; i++) rowData.push(rawCode[i] || '');
+                    for(let i=0; i<14; i++) rowData.push(rawAcc[i] || '');
                     data.push(rowData);
                 });
 
+                // Add empty rows if needed for remainder
                 const remainder = batchItems.length % 7;
                 if (remainder !== 0) {
                     const emptyRows = 7 - remainder;
@@ -292,17 +263,167 @@
                     const csv = XLSX.utils.sheet_to_csv(ws);
                     const bom = "\uFEFF";
                     const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8" });
-                    
-                    const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `匯款資料_${new Date().toISOString().slice(0,10)}_修正版.csv`;
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `匯款資料_${new Date().toISOString().slice(0,10)}.csv`;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
                 } catch (e) { alert("匯出失敗：" + e.message); }
             };
 
+            // --- Word Generation Logic ---
+            const handleGenerateWord = () => {
+                if (batchItems.length === 0) return;
+                
+                // 1. Try to fetch template automatically
+                fetch(TEMPLATE_FILENAME)
+                    .then(response => {
+                        if (!response.ok) throw new Error("Template not found");
+                        return response.arrayBuffer();
+                    })
+                    .then(arrayBuffer => {
+                        processWordGeneration(arrayBuffer);
+                    })
+                    .catch(err => {
+                        console.error("Auto-load failed:", err);
+                        // Fallback: Trigger hidden file input
+                        if(confirm(`無法自動載入 '${TEMPLATE_FILENAME}' (可能因瀏覽器安全限制或檔案不存在)。\n\n是否手動選擇範本檔？`)) {
+                            templateInputRef.current.click();
+                        }
+                    });
+            };
+
+            const handleTemplateSelect = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => processWordGeneration(evt.target.result);
+                reader.readAsArrayBuffer(file);
+                e.target.value = ''; // Reset
+            };
+
+            const processWordGeneration = (arrayBuffer) => {
+                try {
+                    const ROWS_PER_PAGE = 7;
+                    const chunks = [];
+                    for (let i = 0; i < batchItems.length; i += ROWS_PER_PAGE) {
+                        chunks.push(batchItems.slice(i, i + ROWS_PER_PAGE));
+                    }
+
+                    let combinedBodyXML = "";
+                    let finalSectionPr = ""; 
+
+                    for (let i = 0; i < chunks.length; i++) {
+                        const chunk = chunks[i];
+                        const zip = new PizZip(arrayBuffer.slice(0)); 
+                        const doc = new window.docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => "" });
+                        
+                        // Prepare data for this chunk
+                        const pageData = preparePageData(chunk);
+                        doc.render(pageData);
+
+                        const fullXML = doc.getZip().file("word/document.xml").asText();
+                        const startTag = "<w:body>";
+                        const endTag = "</w:body>";
+                        let bodyContent = fullXML.substring(fullXML.indexOf(startTag) + startTag.length, fullXML.lastIndexOf(endTag));
+
+                        // Handle section break to allow merging
+                        if (bodyContent.includes("<w:sectPr")) {
+                            const sectIndex = bodyContent.lastIndexOf("<w:sectPr");
+                            if (i === chunks.length - 1) {
+                                finalSectionPr = bodyContent.substring(sectIndex);
+                            }
+                            bodyContent = bodyContent.substring(0, sectIndex);
+                        }
+                        combinedBodyXML += bodyContent;
+                    }
+
+                    const finalZip = new PizZip(arrayBuffer.slice(0));
+                    let finalXML = finalZip.file("word/document.xml").asText();
+                    const startTag = "<w:body>";
+                    const endTag = "</w:body>";
+                    const prefix = finalXML.substring(0, finalXML.indexOf(startTag) + startTag.length);
+                    const suffix = finalXML.substring(finalXML.lastIndexOf(endTag));
+                    
+                    const newDocumentXML = prefix + combinedBodyXML + finalSectionPr + suffix;
+                    finalZip.file("word/document.xml", newDocumentXML);
+
+                    const out = finalZip.generate({
+                        type: "blob",
+                        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    });
+                    saveAs(out, `大宗匯款單_自動生成_${new Date().toISOString().slice(0,10)}.docx`);
+
+                } catch (error) {
+                    alert("生成 Word 失敗：" + error.message);
+                    console.error(error);
+                }
+            };
+
+            const preparePageData = (chunk) => {
+                const cleanZip = String(settings.remitterZip || "").replace(/[^0-9]/g, '');
+                const baseData = {
+                    RName: settings.remitterName,
+                    RID: settings.remitterId,
+                    RAddr: settings.remitterAddr,
+                    RTel: settings.remitterPhone,
+                    RZip: settings.remitterZip, // Full Zip
+                    AName: settings.agentName,
+                    AID: settings.agentId,
+                    ATel: settings.agentPhone // Added Agent Phone
+                };
+                
+                // Add split zip
+                for(let k=1; k<=5; k++) baseData[`RZip_${k}`] = cleanZip[k-1] || "";
+
+                // Fill vendor rows
+                for (let j = 0; j < 7; j++) {
+                    const item = chunk[j];
+                    const idx = j + 1;
+                    const suffix = `_${idx}`;
+
+                    if (item) {
+                        // Smart Bank Name
+                        let bankText = item.bank || "";
+                        if (!bankText) bankText = "銀行"; // Default
+                        
+                        // Smart Branch Name
+                        let branchText = item.branch || "";
+                        if (!branchText) {
+                            branchText = "      分行"; 
+                        } else {
+                            if (!branchText.endsWith("分行")) branchText += "分行";
+                        }
+
+                        // Amount formatting
+                        let fmtAmt = "";
+                        if (item.amount) fmtAmt = Number(item.amount).toLocaleString();
+
+                        baseData[`Payee${suffix}`] = item.name;
+                        baseData[`Bank${suffix}`] = bankText;
+                        baseData[`Branch${suffix}`] = branchText;
+                        baseData[`Amt${suffix}`] = fmtAmt;
+                        
+                        const bCode = String(item.code || "");
+                        for (let k = 1; k <= 7; k++) baseData[`B${k}${suffix}`] = bCode[k-1] || "";
+                        
+                        const acc = String(item.account || "");
+                        for (let k = 1; k <= 14; k++) baseData[`A${k}${suffix}`] = acc[k-1] || "";
+                    } else {
+                        // Empty row
+                        baseData[`Payee${suffix}`] = "";
+                        baseData[`Bank${suffix}`] = "銀行";
+                        baseData[`Branch${suffix}`] = "      分行";
+                        baseData[`Amt${suffix}`] = "";
+                        for (let k = 1; k <= 7; k++) baseData[`B${k}${suffix}`] = "";
+                        for (let k = 1; k <= 14; k++) baseData[`A${k}${suffix}`] = "";
+                    }
+                }
+                return baseData;
+            };
+
+            // --- Handlers (Existing) ---
             const handleImportBatchCSV = (e) => {
                 const file = e.target.files[0];
                 if(!file) return;
@@ -321,17 +442,15 @@
                                     name: row[1],
                                     bank: row[2] || '',
                                     branch: row[3] || '',
-                                    code: cleanCode(row[4]), // 套用智慧補零
+                                    code: cleanCode(row[4]),
                                     account: cleanAccount(row[5]),
                                     amount: String(row[7] || '').replace(/[^0-9]/g, '')
                                 });
                             }
                         }
-                        if(newItems.length > 0) {
-                            if(confirm(`成功讀取 ${newItems.length} 筆資料。確定匯入嗎？(將附加在目前清單後)`)) {
-                                setBatchItems(prev => [...prev, ...newItems]);
-                            }
-                        } else { alert("讀取不到有效資料，請確認檔案是否正確。"); }
+                        if(newItems.length > 0 && confirm(`成功讀取 ${newItems.length} 筆資料。匯入？`)) {
+                            setBatchItems(prev => [...prev, ...newItems]);
+                        } else { alert("讀取不到有效資料。"); }
                     } catch(err) { alert("匯入失敗：" + err.message); }
                     e.target.value = '';
                 };
@@ -339,11 +458,10 @@
             };
 
             const handleBackupSystem = () => {
-                const backupData = { version: "1.0", timestamp: new Date().toISOString(), settings: settings, payees: payees };
+                const backupData = { version: "1.0", timestamp: new Date().toISOString(), settings, payees };
                 const blob = new Blob([JSON.stringify(backupData, null, 2)], {type: "application/json"});
-                const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url;
+                a.href = URL.createObjectURL(blob);
                 a.download = `系統備份_${new Date().toISOString().slice(0,10)}.json`;
                 a.click();
             };
@@ -355,13 +473,11 @@
                 reader.onload = (evt) => {
                     try {
                         const data = JSON.parse(evt.target.result);
-                        if(data.settings && data.payees) {
-                            if(confirm(`確定還原備份？\n包含 ${data.payees.length} 筆廠商資料與匯款人設定。`)) {
-                                setSettings(data.settings);
-                                setPayees(data.payees);
-                                alert("還原成功！");
-                            }
-                        } else { alert("檔案格式錯誤"); }
+                        if(data.settings && data.payees && confirm(`確定還原？含 ${data.payees.length} 筆廠商。`)) {
+                            setSettings(data.settings);
+                            setPayees(data.payees);
+                            alert("還原成功！");
+                        }
                     } catch(err) { alert("解析失敗"); }
                     e.target.value = '';
                 };
@@ -370,47 +486,17 @@
 
             const handleDownloadVendorTemplate = () => {
                 const headers = ["廠商名稱", "銀行名稱", "分行名稱", "銀行代碼", "銀行帳號"];
-                // 1. Header
-                // 2. Example Row
-                const data = [
-                    headers,
-                    ["範例廠商", "台灣銀行", "總行", "004", "0123456789"]
-                ];
-                
-                // Removed the pre-population of 50 empty rows to keep file size small.
-
+                const data = [headers, ["範例廠商", "台灣銀行", "總行", "004", "0123456789"]];
                 const ws = XLSX.utils.aoa_to_sheet(data);
-                
-                // Setting column widths
-                ws['!cols'] = [
-                    { wch: 20 }, 
-                    { wch: 15 }, 
-                    { wch: 15 }, 
-                    { wch: 10 }, 
-                    { wch: 20 }
-                ];
-
-                // Manually force text format (@) for the banking columns (D and E, indices 3 and 4)
-                // Range: Just the example row (Row 2, Index 1)
+                ws['!cols'] = [{ wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 20 }];
                 
                 const range = XLSX.utils.decode_range(ws['!ref']);
-                // Only iterate through existing rows (which is just the header and example row now)
-                // We start from R=1 (row 2)
                 for(let R = 1; R <= range.e.r; ++R) {
-                    const colCode = XLSX.utils.encode_cell({r: R, c: 3}); // Column D (Bank Code)
-                    const colAcct = XLSX.utils.encode_cell({r: R, c: 4}); // Column E (Account)
-                    
-                    if(ws[colCode]) {
-                        ws[colCode].z = '@'; // Force Text Format
-                        ws[colCode].t = 's'; // Force String Type
-                    }
-
-                    if(ws[colAcct]) {
-                        ws[colAcct].z = '@'; // Force Text Format
-                        ws[colAcct].t = 's'; // Force String Type
-                    }
+                    const colCode = XLSX.utils.encode_cell({r: R, c: 3});
+                    const colAcct = XLSX.utils.encode_cell({r: R, c: 4});
+                    if(ws[colCode]) { ws[colCode].z = '@'; ws[colCode].t = 's'; }
+                    if(ws[colAcct]) { ws[colAcct].z = '@'; ws[colAcct].t = 's'; }
                 }
-
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "廠商資料");
                 XLSX.writeFile(wb, "廠商匯入範本.xlsx");
@@ -422,70 +508,46 @@
                 const reader = new FileReader();
                 reader.onload = (evt) => {
                     try {
-                        // 改用 array buffer 以支援 .xlsx
                         const wb = XLSX.read(evt.target.result, {type:'array'});
                         const ws = wb.Sheets[wb.SheetNames[0]];
                         const data = XLSX.utils.sheet_to_json(ws, {header: 1});
-                        
                         if(data.length < 2) { alert("檔案似乎是空的"); return; }
-
                         const newVendors = [];
                         for(let i=1; i<data.length; i++) {
                             const row = data[i];
-                            if(row[0]) { // Name required
+                            if(row[0]) {
                                 newVendors.push({
                                     id: Date.now() + i,
                                     name: String(row[0]),
                                     bank: String(row[1] || ''),
                                     branch: String(row[2] || ''),
-                                    code: String(row[3] || '').trim(), // 取消自動補零，改為直接讀取並修剪空白
+                                    code: String(row[3] || '').trim(),
                                     account: cleanAccount(row[4])
                                 });
                             }
                         }
-
-                        if(newVendors.length > 0) {
-                            if(confirm(`成功讀取 ${newVendors.length} 筆廠商資料。確定匯入嗎？`)) {
-                                setPayees(prev => [...prev, ...newVendors]);
-                                alert(`匯入完成！成功加入 ${newVendors.length} 筆資料。`);
-                            }
-                        } else {
-                            alert("找不到有效資料，請確認 Excel 格式。");
-                        }
-                    } catch(err) {
-                        alert("匯入失敗：" + err.message);
-                    }
+                        if(newVendors.length > 0 && confirm(`成功讀取 ${newVendors.length} 筆資料。匯入？`)) {
+                            setPayees(prev => [...prev, ...newVendors]);
+                            alert(`匯入完成！成功加入 ${newVendors.length} 筆資料。`);
+                        } else { alert("無有效資料。"); }
+                    } catch(err) { alert("匯入失敗：" + err.message); }
                     e.target.value = '';
                 };
                 reader.readAsArrayBuffer(file);
             };
 
-            const handleVendorFormChange = (e) => setVendorForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
-            
+            const handleVendorFormChange = (e) => {
+                const { name, value } = e.target;
+                setVendorForm(prev => ({ ...prev, [name]: value }));
+            };
+
             const handleVendorSubmit = (e) => {
                 e.preventDefault();
-                const processedForm = {
-                    ...vendorForm,
-                    code: cleanCode(vendorForm.code),
-                    account: cleanAccount(vendorForm.account)
-                };
-
+                const processedForm = { ...vendorForm, code: cleanCode(vendorForm.code), account: cleanAccount(vendorForm.account) };
                 if (editingVendorId) {
                     setPayees(prev => prev.map(p => p.id === editingVendorId ? { ...p, ...processedForm } : p));
-                    setBatchItems(prev => prev.map(item => {
-                        if (item.vendorId === editingVendorId) {
-                            return {
-                                ...item,
-                                name: processedForm.name,
-                                bank: processedForm.bank,
-                                branch: processedForm.branch,
-                                code: processedForm.code,
-                                account: processedForm.account,
-                            };
-                        }
-                        return item;
-                    }));
-                    alert("更新成功！清單中的相關項目已同步修正。");
+                    setBatchItems(prev => prev.map(item => item.vendorId === editingVendorId ? { ...item, ...processedForm } : item));
+                    alert("更新成功！");
                     handleCancelEdit();
                 } else {
                     setPayees(prev => [...prev, { id: Date.now(), ...processedForm }]);
@@ -495,60 +557,25 @@
 
             const handleVendorClick = (payee) => {
                 if (editingVendorId === payee.id) handleCancelEdit();
-                else {
-                    setEditingVendorId(payee.id);
-                    setVendorForm({ name: payee.name, bank: payee.bank, branch: payee.branch, code: payee.code, account: payee.account });
-                }
+                else { setEditingVendorId(payee.id); setVendorForm({ name: payee.name, bank: payee.bank, branch: payee.branch, code: payee.code, account: payee.account }); }
             };
-
-            const handleCancelEdit = () => {
-                setEditingVendorId(null);
-                setVendorForm({ name: '', bank: '', branch: '', code: '', account: '' });
-            };
-
-            const handleDeletePayee = (e, id) => {
-                e.stopPropagation();
-                if(confirm("確定刪除此廠商？")) {
-                    setPayees(payees.filter(p => p.id !== id));
-                    if(id === editingVendorId) handleCancelEdit();
-                    if(String(id) === selectedPayeeId) setSelectedPayeeId('');
-                }
-            };
-
-            const filteredPayees = useMemo(() => {
-                if (!searchTerm) return payees;
-                const lowerTerm = searchTerm.toLowerCase();
-                return payees.filter(p => (p.name && p.name.toLowerCase().includes(lowerTerm)) || (p.bank && p.bank.toLowerCase().includes(lowerTerm)));
-            }, [payees, searchTerm]);
-
+            const handleCancelEdit = () => { setEditingVendorId(null); setVendorForm({ name: '', bank: '', branch: '', code: '', account: '' }); };
+            const handleDeletePayee = (e, id) => { e.stopPropagation(); if(confirm("確定刪除？")) { setPayees(payees.filter(p => p.id !== id)); if(id === editingVendorId) handleCancelEdit(); if(String(id) === selectedPayeeId) setSelectedPayeeId(''); }};
+            const filteredPayees = useMemo(() => { if (!searchTerm) return payees; const lowerTerm = searchTerm.toLowerCase(); return payees.filter(p => (p.name && p.name.toLowerCase().includes(lowerTerm)) || (p.bank && p.bank.toLowerCase().includes(lowerTerm))); }, [payees, searchTerm]);
             const selectedPayeeData = useMemo(() => payees.find(p => p.id === parseInt(selectedPayeeId)), [selectedPayeeId, payees]);
-
-            const handleAddItem = () => {
-                if (!selectedPayeeData || !amount) return;
-                const newItem = {
-                    ...selectedPayeeData,
-                    vendorId: selectedPayeeData.id,
-                    amount: amount,
-                    id: Date.now()
-                };
-                setBatchItems([...batchItems, newItem]);
-                setAmount('');
-            };
-
+            const handleAddItem = () => { if (!selectedPayeeData || !amount) return; setBatchItems([...batchItems, { ...selectedPayeeData, vendorId: selectedPayeeData.id, amount: amount, id: Date.now() }]); setAmount(''); };
             const handleRemoveItem = (id) => setBatchItems(batchItems.filter(item => item.id !== id));
-            const handleClearBatch = () => { if(window.confirm('確定清空今日匯款清單?')) setBatchItems([]); };
-            const handleSettingChange = (k, v) => setSettings(p => ({...p, [k]: v}));
+            const handleClearBatch = () => { if(window.confirm('確定清空？')) setBatchItems([]); };
 
             return (
                 <div className="min-h-screen bg-gray-100 p-4 font-sans text-gray-800 pb-20">
                     <div className="max-w-6xl mx-auto space-y-6">
-                        {/* Header */}
                         <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-600 flex flex-col md:flex-row justify-between items-center gap-4">
                             <div>
                                 <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                                    <IconUsers /> 大宗郵政跨行匯款小幫手
+                                    <IconUsers /> 大宗匯款印單小幫手
                                 </h1>
-                                <p className="text-sm text-gray-500 mt-1">v19.5</p>
+                                <p className="text-sm text-gray-500 mt-1">v19.9 傻瓜印單完整版(Word樣版檔待更新)</p>
                             </div>
                             <div className="text-right text-sm text-gray-500 bg-gray-50 px-4 py-2 rounded-lg w-full md:w-auto">
                                 <div className="flex justify-between md:block"><span>目前筆數:</span> <span className="font-bold text-blue-600 text-lg ml-2">{batchItems.length}</span></div>
@@ -557,10 +584,8 @@
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                            {/* Left Column (Controls) */}
+                            {/* Left Column */}
                             <div className="lg:col-span-4 space-y-4">
-                                
-                                {/* Data Loading & Backup */}
                                 <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100 ring-2 ring-blue-50">
                                     <button onClick={() => setIsBackupOpen(!isBackupOpen)} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-700 font-bold">
                                         <div className="flex items-center gap-2"><IconDatabase /> 資料載入與備份設定</div>
@@ -570,25 +595,13 @@
                                         <div className="p-4 space-y-4 border-t border-gray-100">
                                             <div className={`p-3 rounded-lg border flex flex-col gap-2 transition-colors ${storageEnabled ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                                                 <div className="flex justify-between items-center">
-                                                    <span className={`font-bold text-sm ${storageEnabled ? 'text-green-800' : 'text-red-800'}`}>
-                                                        {storageEnabled ? '已啟用瀏覽器暫存' : '已停用瀏覽器暫存'}
-                                                    </span>
+                                                    <span className={`font-bold text-sm ${storageEnabled ? 'text-green-800' : 'text-red-800'}`}>{storageEnabled ? '已啟用瀏覽器暫存' : '已停用瀏覽器暫存'}</span>
                                                     <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
-                                                        <input type="checkbox" name="toggle" id="toggle" className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 ease-in-out" 
-                                                            checked={storageEnabled} 
-                                                            onChange={(e) => setStorageEnabled(e.target.checked)}
-                                                            style={{
-                                                                right: storageEnabled ? '0' : 'unset',
-                                                                left: storageEnabled ? 'unset' : '0',
-                                                                borderColor: storageEnabled ? '#16a34a' : '#ef4444'
-                                                            }}
-                                                        />
+                                                        <input type="checkbox" name="toggle" id="toggle" className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300 ease-in-out" checked={storageEnabled} onChange={(e) => setStorageEnabled(e.target.checked)} style={{ right: storageEnabled ? '0' : 'unset', left: storageEnabled ? 'unset' : '0', borderColor: storageEnabled ? '#16a34a' : '#ef4444' }} />
                                                         <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer border ${storageEnabled ? 'bg-green-500 border-green-500' : 'bg-gray-300 border-gray-300'}`}></label>
                                                     </div>
                                                 </div>
-                                                <div className="text-xs text-gray-500">
-                                                    {storageEnabled ? '資料會自動儲存在此電腦的瀏覽器中。' : '安全模式：資料僅暫存於記憶體，關閉視窗後清除。'}
-                                                </div>
+                                                <div className="text-xs text-gray-500">{storageEnabled ? '資料會自動儲存在此電腦的瀏覽器中。' : '安全模式：資料僅暫存於記憶體，關閉視窗後清除。'}</div>
                                             </div>
                                             <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-sm">
                                                 <div className="font-bold text-blue-800 mb-2">全系統備份 (廠商 + 設定)</div>
@@ -611,25 +624,23 @@
                                     {isSettingsOpen && (
                                         <div className="p-5 space-y-3 text-sm border-t border-gray-100">
                                             <div className="font-bold text-blue-600">匯款人</div>
-                                            <input type="text" value={settings.remitterName} onChange={(e)=>handleSettingChange('remitterName', e.target.value)} className="w-full border p-2 rounded" placeholder="名稱" />
-                                            <input type="text" value={settings.remitterId} onChange={(e)=>handleSettingChange('remitterId', e.target.value)} className="w-full border p-2 rounded" placeholder="統編" />
-                                            <input type="text" value={settings.remitterPhone} onChange={(e)=>handleSettingChange('remitterPhone', e.target.value)} className="w-full border p-2 rounded" placeholder="電話" />
+                                            <input type="text" value={settings.remitterName} onChange={(e)=>setSettings(p=>({...p, remitterName: e.target.value}))} className="w-full border p-2 rounded" placeholder="名稱" />
+                                            <input type="text" value={settings.remitterId} onChange={(e)=>setSettings(p=>({...p, remitterId: e.target.value}))} className="w-full border p-2 rounded" placeholder="統編" />
+                                            <input type="text" value={settings.remitterPhone} onChange={(e)=>setSettings(p=>({...p, remitterPhone: e.target.value}))} className="w-full border p-2 rounded" placeholder="電話" />
                                             <div className="flex gap-2 flex-col">
-                                                <input type="text" value={settings.remitterZip} onChange={(e)=>handleSettingChange('remitterZip', e.target.value)} className="w-full border p-2 rounded font-bold text-gray-700" placeholder="郵遞區號 (3+2碼)" />
-                                                { (!settings.remitterZip || settings.remitterZip.length !== 5) && (
-                                                    <div className="text-[10px] text-red-500 flex items-center gap-1 px-1"><IconAlert/> 請務必填寫完整 5 碼 (3+2) 以確保列印格式正確</div>
-                                                )}
-                                                <input type="text" value={settings.remitterAddr} onChange={(e)=>handleSettingChange('remitterAddr', e.target.value)} className="w-full border p-2 rounded" placeholder="地址" />
+                                                <input type="text" value={settings.remitterZip} onChange={(e)=>setSettings(p=>({...p, remitterZip: e.target.value}))} className="w-full border p-2 rounded font-bold text-gray-700" placeholder="郵遞區號 (3+2碼)" />
+                                                { (!settings.remitterZip || settings.remitterZip.length !== 5) && <div className="text-[10px] text-red-500 flex items-center gap-1 px-1"><IconAlert/> 請務必填寫完整 5 碼 (3+2) 以確保列印格式正確</div> }
+                                                <input type="text" value={settings.remitterAddr} onChange={(e)=>setSettings(p=>({...p, remitterAddr: e.target.value}))} className="w-full border p-2 rounded" placeholder="地址" />
                                             </div>
                                             <div className="border-t pt-2 font-bold text-green-600">代理人</div>
-                                            <input type="text" value={settings.agentName} onChange={(e)=>handleSettingChange('agentName', e.target.value)} className="w-full border p-2 rounded" placeholder="姓名" />
-                                            <input type="text" value={settings.agentId} onChange={(e)=>handleSettingChange('agentId', e.target.value)} className="w-full border p-2 rounded" placeholder="身分證" />
-                                            <input type="text" value={settings.agentPhone} onChange={(e)=>handleSettingChange('agentPhone', e.target.value)} className="w-full border p-2 rounded" placeholder="電話" />
+                                            <input type="text" value={settings.agentName} onChange={(e)=>setSettings(p=>({...p, agentName: e.target.value}))} className="w-full border p-2 rounded" placeholder="姓名" />
+                                            <input type="text" value={settings.agentId} onChange={(e)=>setSettings(p=>({...p, agentId: e.target.value}))} className="w-full border p-2 rounded" placeholder="身分證" />
+                                            <input type="text" value={settings.agentPhone} onChange={(e)=>setSettings(p=>({...p, agentPhone: e.target.value}))} className="w-full border p-2 rounded" placeholder="電話" />
                                         </div>
                                     )}
                                 </div>
 
-                                {/* Vendor Management */}
+                                {/* Vendor Mgr */}
                                 <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
                                     <button onClick={() => setIsVendorMgrOpen(!isVendorMgrOpen)} className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-700 font-bold">
                                         <div className="flex items-center gap-2"><IconDisk /> 廠商資料庫管理</div>
@@ -637,7 +648,6 @@
                                     </button>
                                     {isVendorMgrOpen && (
                                         <div className="p-4 space-y-4 border-t border-gray-100">
-                                            {/* Batch Vendor Tools */}
                                             <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 text-sm mb-4">
                                                 <div className="font-bold text-purple-800 mb-2 flex items-center gap-1"><IconTable /> 批次匯入廠商</div>
                                                 <div className="flex gap-2">
@@ -645,11 +655,8 @@
                                                     <button onClick={() => vendorFileInputRef.current.click()} className="flex-1 bg-purple-600 text-white border border-purple-600 py-2 rounded font-bold hover:bg-purple-700 flex items-center justify-center gap-1 shadow-sm"><IconUpload/> 匯入 Excel</button>
                                                     <input type="file" ref={vendorFileInputRef} onChange={handleImportVendors} className="hidden" accept=".csv, .xlsx, .xls" />
                                                 </div>
-                                                <div className="mt-2 text-xs text-purple-600">
-                                                    * 支援 .xlsx, .xls, .csv 格式 (Excel 編輯時請按 Ctrl+1 將儲存格格式改為「文字」以免遺漏 0)
-                                                </div>
+                                                <div className="mt-2 text-xs text-purple-600">* 支援 .xlsx, .xls, .csv 格式</div>
                                             </div>
-
                                             <form onSubmit={handleVendorSubmit} className={`space-y-2 p-3 rounded border text-sm transition-colors ${editingVendorId ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
                                                 <div className="flex justify-between items-center mb-2">
                                                     <div className={`font-bold ${editingVendorId ? 'text-orange-700' : 'text-gray-600'}`}>{editingVendorId ? '編輯廠商模式' : '手動新增廠商'}</div>
@@ -666,7 +673,6 @@
                                                 </div>
                                                 <button type="submit" className={`w-full py-1.5 rounded font-bold text-white transition-colors ${editingVendorId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-gray-700 hover:bg-gray-800'}`}>{editingVendorId ? '儲存修改' : '新增'}</button>
                                             </form>
-
                                             <div className="max-h-56 overflow-y-auto border rounded text-sm bg-white">
                                                 {payees.length === 0 && <div className="p-4 text-center text-gray-400">無資料 (請匯入備份或手動新增)</div>}
                                                 {payees.map(p => (
@@ -693,7 +699,6 @@
                                             <option value="">-- 請選擇廠商 --</option>
                                             {filteredPayees.map(p => <option key={p.id} value={p.id}>{p.name} ({p.bank})</option>)}
                                         </select>
-                                        
                                         {selectedPayeeData ? (
                                             <div className="bg-blue-50 p-3 rounded-lg text-xs space-y-1 border border-blue-100 shadow-inner">
                                                 <div className="font-bold text-blue-900 border-b border-blue-200 pb-1 mb-1">{selectedPayeeData.name}</div>
@@ -701,10 +706,7 @@
                                                 <div className="flex justify-between text-blue-800"><span>分行:</span> <span>{selectedPayeeData.branch}</span></div>
                                                 <div className="flex justify-between text-blue-800"><span>帳號:</span> <span className="font-mono font-bold tracking-wider">{selectedPayeeData.account}</span></div>
                                             </div>
-                                        ) : (
-                                            <div className="h-20 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400 text-xs border border-dashed border-gray-300">請先選擇廠商</div>
-                                        )}
-
+                                        ) : ( <div className="h-20 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400 text-xs border border-dashed border-gray-300">請先選擇廠商</div> )}
                                         <div className="relative">
                                             <span className="absolute left-3 top-2 text-gray-400 font-bold">$</span>
                                             <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddItem()} className="w-full border rounded-lg pl-7 p-2 font-bold focus:ring-2 focus:ring-blue-500 outline-none" placeholder="金額" />
@@ -716,7 +718,7 @@
                                 </div>
                             </div>
 
-                            {/* Right Column (List & Action) */}
+                            {/* Right Column */}
                             <div className="lg:col-span-8 flex flex-col h-full space-y-4">
                                 <div className="bg-white rounded-xl shadow-sm flex-grow flex flex-col overflow-hidden border border-gray-200 min-h-[500px]">
                                     <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
@@ -758,9 +760,7 @@
                                                                 {item.bank} <span className="text-gray-400">({item.branch})</span>
                                                                 <div className="font-mono text-gray-400 text-[10px] truncate">{item.account}</div>
                                                             </td>
-                                                            <td className="px-2 py-3 text-right align-middle">
-                                                                <input type="number" value={item.amount} onChange={(e) => updateItemAmount(item.id, e.target.value)} className="w-full text-right text-sm font-bold text-blue-600 bg-transparent border-b border-transparent hover:border-blue-200 focus:border-blue-500 focus:outline-none px-1" />
-                                                            </td>
+                                                            <td className="px-2 py-3 text-right align-middle"><input type="number" value={item.amount} onChange={(e) => updateItemAmount(item.id, e.target.value)} className="w-full text-right text-sm font-bold text-blue-600 bg-transparent border-b border-transparent hover:border-blue-200 focus:border-blue-500 focus:outline-none px-1" /></td>
                                                             <td className="px-1 py-3 text-center align-middle"><button onClick={() => handleRemoveItem(item.id)} className="text-gray-300 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"><IconTrash /></button></td>
                                                         </tr>
                                                     ))}
@@ -770,16 +770,23 @@
                                     </div>
                                 </div>
 
-                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                                    <button onClick={handleExportCSV} disabled={batchItems.length === 0} className={`w-full py-4 rounded-xl font-bold text-white flex justify-center items-center gap-2 text-lg shadow-lg transform transition-all active:scale-95 ${batchItems.length === 0 ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 hover:shadow-green-200'}`}>
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 grid grid-cols-2 gap-4">
+                                    <button onClick={handleExportCSV} disabled={batchItems.length === 0} className={`w-full py-4 rounded-xl font-bold text-white flex justify-center items-center gap-2 text-lg shadow-lg transform transition-all active:scale-95 ${batchItems.length === 0 ? 'bg-gray-300 cursor-not-allowed' : 'bg-gray-600 hover:bg-gray-700'}`}>
                                         <IconDownload /> 下載 Word 合併列印檔 (.csv)
                                     </button>
+                                    
+                                    <div className="relative">
+                                        <button onClick={handleGenerateWord} disabled={batchItems.length === 0} className={`w-full py-4 rounded-xl font-bold text-white flex justify-center items-center gap-2 text-lg shadow-lg transform transition-all active:scale-95 ${batchItems.length === 0 ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}>
+                                            <IconFileWord /> 下載 Word (.docx) 自動生成
+                                        </button>
+                                        <input type="file" ref={templateInputRef} onChange={handleTemplateSelect} className="hidden" accept=".docx" />
+                                    </div>
                                 </div>
 
                                 {/* Instruction Section */}
                                 <div className="bg-white rounded-xl shadow-sm border-l-4 border-purple-600 overflow-hidden mt-4">
                                     <button onClick={toggleInstructions} className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors text-gray-800 font-bold">
-                                        <div className="flex items-center gap-2"><IconFileWord className="text-purple-600" /> Word 合併列印操作教學</div>
+                                        <div className="flex items-center gap-2"><IconFileWord className="text-purple-600" /> Word 合併列印操作教學 (僅供 CSV 模式參考)</div>
                                         <div className={`transition-transform ${isInstructionsOpen ? 'rotate-90' : ''}`}><IconArrow /></div>
                                     </button>
                                     {isInstructionsOpen && (
@@ -787,13 +794,14 @@
                                             <div className="flex flex-col gap-4">
                                                 <div className="flex flex-wrap gap-3 items-center">
                                                     <a href="大宗郵政跨行匯款_合併列印.docx" className="inline-flex items-center justify-center gap-2 bg-purple-100 text-purple-700 px-4 py-3 rounded-lg font-bold hover:bg-purple-200 transition-colors border border-purple-200 w-fit">
-                                                        <IconDownload /> 下載合併列印範本檔 (.docx)
+                                                        <IconDownload />  下載合併列印範本檔 (.docx)
                                                     </a>
-                                                    <a href="http://www.post.gov.tw/post/internet/Download/all_list.jsp?ID=2201#dl_link_512" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:text-purple-800 underline text-sm flex items-center gap-1">
-                                                        <IconExternalLink /> 原始檔案來源 (中華郵政)
-                                                    </a>
+                                                    <a href="http://www.post.gov.tw/post/internet/Download/all_list.jsp?ID=2201#dl_link_512" target="_blank" rel="noopener noreferrer" class="text-purple-600 hover:text-purple-800 underline text-sm flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"></path></svg> 原始檔案來源 (中華郵政)</a>
                                                 </div>
-
+                                                <div className="text-sm text-gray-500">
+                                                    * 若使用「自動生成」按鈕，無需手動合併列印。
+                                                </div>
+                                                
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
                                                     <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
                                                         <span className="font-bold text-purple-600 block mb-1">STEP 1</span>
@@ -823,7 +831,6 @@
                                         </div>
                                     )}
                                 </div>
-
                             </div>
                         </div>
                     </div>
