@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大宗匯款印單小幫手 (v19.3 Excel廠商庫版)</title>
+    <title>大宗郵政跨行匯款小幫手</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -51,8 +51,8 @@
         const IconChevronDown = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>;
         const IconFileWord = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>;
         const IconAlert = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-yellow-500"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>;
-        const IconTable = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25v1.5c0 .621.504 1.125 1.125 1.125m17.25-2.625h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125v1.5c0 .621-.504 1.125-1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v1.5m0 1.5c0 .621-.504 1.125-1.125 1.125m1.125-1.125c.621 0 1.125.504 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125" /></svg>;
         const IconExternalLink = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>;
+        const IconTable = () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25v1.5c0 .621.504 1.125 1.125 1.125m17.25-2.625h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125v1.5c0 .621-.504 1.125-1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125-1.125 1.125M12 10.875v1.5m0 1.5c0 .621-.504 1.125-1.125 1.125m1.125-1.125c.621 0 1.125.504 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125" /></svg>;
 
         const App = () => {
             const defaultPayees = [];
@@ -370,12 +370,47 @@
 
             const handleDownloadVendorTemplate = () => {
                 const headers = ["廠商名稱", "銀行名稱", "分行名稱", "銀行代碼", "銀行帳號"];
+                // 1. Header
+                // 2. Example Row
                 const data = [
                     headers,
                     ["範例廠商", "台灣銀行", "總行", "004", "0123456789"]
                 ];
                 
+                // Removed the pre-population of 50 empty rows to keep file size small.
+
                 const ws = XLSX.utils.aoa_to_sheet(data);
+                
+                // Setting column widths
+                ws['!cols'] = [
+                    { wch: 20 }, 
+                    { wch: 15 }, 
+                    { wch: 15 }, 
+                    { wch: 10 }, 
+                    { wch: 20 }
+                ];
+
+                // Manually force text format (@) for the banking columns (D and E, indices 3 and 4)
+                // Range: Just the example row (Row 2, Index 1)
+                
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                // Only iterate through existing rows (which is just the header and example row now)
+                // We start from R=1 (row 2)
+                for(let R = 1; R <= range.e.r; ++R) {
+                    const colCode = XLSX.utils.encode_cell({r: R, c: 3}); // Column D (Bank Code)
+                    const colAcct = XLSX.utils.encode_cell({r: R, c: 4}); // Column E (Account)
+                    
+                    if(ws[colCode]) {
+                        ws[colCode].z = '@'; // Force Text Format
+                        ws[colCode].t = 's'; // Force String Type
+                    }
+
+                    if(ws[colAcct]) {
+                        ws[colAcct].z = '@'; // Force Text Format
+                        ws[colAcct].t = 's'; // Force String Type
+                    }
+                }
+
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "廠商資料");
                 XLSX.writeFile(wb, "廠商匯入範本.xlsx");
@@ -403,7 +438,7 @@
                                     name: String(row[0]),
                                     bank: String(row[1] || ''),
                                     branch: String(row[2] || ''),
-                                    code: cleanCode(row[3]), // 套用智慧補零
+                                    code: String(row[3] || '').trim(), // 取消自動補零，改為直接讀取並修剪空白
                                     account: cleanAccount(row[4])
                                 });
                             }
@@ -412,7 +447,7 @@
                         if(newVendors.length > 0) {
                             if(confirm(`成功讀取 ${newVendors.length} 筆廠商資料。確定匯入嗎？`)) {
                                 setPayees(prev => [...prev, ...newVendors]);
-                                alert(`匯入完成！已自動修正 ${newVendors.filter(v=>v.code.startsWith('0')).length} 筆銀行代碼格式。`);
+                                alert(`匯入完成！成功加入 ${newVendors.length} 筆資料。`);
                             }
                         } else {
                             alert("找不到有效資料，請確認 Excel 格式。");
@@ -511,9 +546,9 @@
                         <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-600 flex flex-col md:flex-row justify-between items-center gap-4">
                             <div>
                                 <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                                    <IconUsers /> 大宗匯款印單小幫手
+                                    <IconUsers /> 大宗郵政跨行匯款小幫手
                                 </h1>
-                                <p className="text-sm text-gray-500 mt-1">v19.3 (Excel廠商庫版)</p>
+                                <p className="text-sm text-gray-500 mt-1">v19.5</p>
                             </div>
                             <div className="text-right text-sm text-gray-500 bg-gray-50 px-4 py-2 rounded-lg w-full md:w-auto">
                                 <div className="flex justify-between md:block"><span>目前筆數:</span> <span className="font-bold text-blue-600 text-lg ml-2">{batchItems.length}</span></div>
@@ -611,7 +646,7 @@
                                                     <input type="file" ref={vendorFileInputRef} onChange={handleImportVendors} className="hidden" accept=".csv, .xlsx, .xls" />
                                                 </div>
                                                 <div className="mt-2 text-xs text-purple-600">
-                                                    * 支援 .xlsx, .xls, .csv 格式 (建議使用 Excel 編輯以保留 0)
+                                                    * 支援 .xlsx, .xls, .csv 格式 (Excel 編輯時請按 Ctrl+1 將儲存格格式改為「文字」以免遺漏 0)
                                                 </div>
                                             </div>
 
