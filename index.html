@@ -707,7 +707,9 @@
                                                     <button onClick={() => vendorFileInputRef.current.click()} className="flex-1 bg-purple-600 text-white border border-purple-600 py-2 rounded font-bold hover:bg-purple-700 flex items-center justify-center gap-1 shadow-sm"><IconUpload/> 匯入 Excel</button>
                                                     <input type="file" ref={vendorFileInputRef} onChange={handleImportVendors} className="hidden" accept=".csv, .xlsx, .xls" />
                                                 </div>
-                                                <div className="mt-2 text-xs text-purple-600">* 支援 .xlsx, .xls, .csv 格式</div>
+                                                <div className="mt-2 text-xs text-purple-600">
+                                                    * 支援 .xlsx, .xls, .csv 格式 (Excel 編輯時請按 Ctrl+1 將儲存格格式改為「文字」以免遺漏 0)
+                                                </div>
                                             </div>
                                             <form onSubmit={handleVendorSubmit} className={`space-y-2 p-3 rounded border text-sm transition-colors ${editingVendorId ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`}>
                                                 <div className="flex justify-between items-center mb-2">
