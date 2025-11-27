@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大宗郵政跨行匯款小幫手 (v19.9)</title>
+    <title>大宗郵政跨行匯款小幫手 (v20)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -303,6 +303,7 @@
                 e.target.value = ''; // Reset
             };
 
+           // --- Word Generation Logic (DOMParser 版 - 無強制分頁) ---
             const processWordGeneration = (arrayBuffer) => {
                 try {
                     const ROWS_PER_PAGE = 7;
@@ -311,43 +312,94 @@
                         chunks.push(batchItems.slice(i, i + ROWS_PER_PAGE));
                     }
 
-                    let combinedBodyXML = "";
-                    let finalSectionPr = ""; 
-
-                    for (let i = 0; i < chunks.length; i++) {
-                        const chunk = chunks[i];
-                        const zip = new PizZip(arrayBuffer.slice(0)); 
-                        const doc = new window.docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => "" });
+                    // Helper: ID Sanitization (防止多頁合併時 ID 重複導致 Word 錯誤)
+                    const sanitizeNode = (node, offset) => {
+                        if (node.nodeType !== 1) return; // 僅處理 Element
                         
-                        // Prepare data for this chunk
+                        // 1. 修復圖片/圖形 ID (wp:docPr)
+                        const docPrs = node.getElementsByTagName('wp:docPr');
+                        for (let i = 0; i < docPrs.length; i++) {
+                            const oldId = docPrs[i].getAttribute('id');
+                            if (oldId) docPrs[i].setAttribute('id', parseInt(oldId) + offset);
+                        }
+                        
+                        // 2. 修復書籤 ID (w:bookmarkStart)
+                        const bookmarks = node.getElementsByTagName('w:bookmarkStart');
+                        for (let i = 0; i < bookmarks.length; i++) {
+                            const oldId = bookmarks[i].getAttribute('w:id');
+                            if (oldId) bookmarks[i].setAttribute('w:id', parseInt(oldId) + offset);
+                        }
+                    };
+
+                    // 第一步：利用 docxtemplater 為每一頁數據生成獨立的 XML 字串
+                    const chunkXmls = chunks.map((chunk) => {
+                        const zip = new PizZip(arrayBuffer.slice(0)); 
+                        const doc = new window.docxtemplater(zip, { 
+                            paragraphLoop: true, 
+                            linebreaks: true,
+                            nullGetter: () => "" 
+                        });
+                        
                         const pageData = preparePageData(chunk);
                         doc.render(pageData);
+                        
+                        return doc.getZip().file("word/document.xml").asText();
+                    });
 
-                        const fullXML = doc.getZip().file("word/document.xml").asText();
-                        const startTag = "<w:body>";
-                        const endTag = "</w:body>";
-                        let bodyContent = fullXML.substring(fullXML.indexOf(startTag) + startTag.length, fullXML.lastIndexOf(endTag));
-
-                        // Handle section break to allow merging
-                        if (bodyContent.includes("<w:sectPr")) {
-                            const sectIndex = bodyContent.lastIndexOf("<w:sectPr");
-                            if (i === chunks.length - 1) {
-                                finalSectionPr = bodyContent.substring(sectIndex);
-                            }
-                            bodyContent = bodyContent.substring(0, sectIndex);
+                    // 第二步：使用 DOMParser 進行結構化合併
+                    const parser = new DOMParser();
+                    const serializer = new XMLSerializer();
+                    
+                    // 解析第一頁作為「主文檔」(Master)
+                    const masterDoc = parser.parseFromString(chunkXmls[0], "text/xml");
+                    const masterBody = masterDoc.getElementsByTagName("w:body")[0];
+                    
+                    // 尋找主文檔的結尾屬性 (Section Properties)
+                    let masterSectPr = null;
+                    const bodyChildren = masterBody.childNodes;
+                    for (let i = 0; i < bodyChildren.length; i++) {
+                        if (bodyChildren[i].nodeName === "w:sectPr") {
+                            masterSectPr = bodyChildren[i];
+                            break;
                         }
-                        combinedBodyXML += bodyContent;
                     }
 
+                    // 循環處理第二頁之後的內容
+                    for (let i = 1; i < chunkXmls.length; i++) {
+                        const chunkDoc = parser.parseFromString(chunkXmls[i], "text/xml");
+                        const chunkBody = chunkDoc.getElementsByTagName("w:body")[0];
+                        const chunkNodes = Array.from(chunkBody.childNodes);
+                        
+                        // --- 修改點：已移除「插入分頁符號」的程式碼 ---
+                        // 因為您的單頁內容很滿，讓 Word 自然換頁即可，避免產生空白頁。
+
+                        // 設定 ID 偏移量 (每頁增加 50000，確保不重複)
+                        const ID_OFFSET = i * 50000; 
+                        
+                        // 複製並插入節點
+                        chunkNodes.forEach(node => {
+                            // 排除 sectPr (每一頁的結尾屬性)，我們只保留最後一頁的屬性即可
+                            if (node.nodeName !== "w:sectPr") {
+                                // 重要：將節點從副文檔轉移到主文檔
+                                const importedNode = masterDoc.importNode(node, true);
+                                
+                                // 執行 ID 清洗
+                                sanitizeNode(importedNode, ID_OFFSET);
+                                
+                                // 插入到主文檔 (插在最後的 sectPr 之前)
+                                if (masterSectPr) {
+                                    masterBody.insertBefore(importedNode, masterSectPr);
+                                } else {
+                                    masterBody.appendChild(importedNode);
+                                }
+                            }
+                        });
+                    }
+
+                    // 第三步：寫回 Zip 並下載
+                    const finalXML = serializer.serializeToString(masterDoc);
                     const finalZip = new PizZip(arrayBuffer.slice(0));
-                    let finalXML = finalZip.file("word/document.xml").asText();
-                    const startTag = "<w:body>";
-                    const endTag = "</w:body>";
-                    const prefix = finalXML.substring(0, finalXML.indexOf(startTag) + startTag.length);
-                    const suffix = finalXML.substring(finalXML.lastIndexOf(endTag));
-                    
-                    const newDocumentXML = prefix + combinedBodyXML + finalSectionPr + suffix;
-                    finalZip.file("word/document.xml", newDocumentXML);
+                    finalZip.file("word/document.xml", finalXML);
 
                     const out = finalZip.generate({
                         type: "blob",
@@ -575,7 +627,7 @@
                                 <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                                     <IconUsers /> 大宗郵政跨行匯款小幫手
                                 </h1>
-                                <p className="text-sm text-gray-500 mt-1">v19.9 傻瓜印單完整版(Word樣版檔待更新)</p>
+                                <p className="text-sm text-gray-500 mt-1">v20 (合併列印完整版)</p>
                             </div>
                             <div className="text-right text-sm text-gray-500 bg-gray-50 px-4 py-2 rounded-lg w-full md:w-auto">
                                 <div className="flex justify-between md:block"><span>目前筆數:</span> <span className="font-bold text-blue-600 text-lg ml-2">{batchItems.length}</span></div>
@@ -786,7 +838,7 @@
                                 {/* Instruction Section */}
                                 <div className="bg-white rounded-xl shadow-sm border-l-4 border-purple-600 overflow-hidden mt-4">
                                     <button onClick={toggleInstructions} className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors text-gray-800 font-bold">
-                                        <div className="flex items-center gap-2"><IconFileWord className="text-purple-600" /> Word 合併列印操作教學 (僅供 CSV 模式參考)</div>
+                                        <div className="flex items-center gap-2"><IconFileWord className="text-purple-600" /> Word 操作教學 (僅供 CSV 模式參考)</div>
                                         <div className={`transition-transform ${isInstructionsOpen ? 'rotate-90' : ''}`}><IconArrow /></div>
                                     </button>
                                     {isInstructionsOpen && (
@@ -794,12 +846,11 @@
                                             <div className="flex flex-col gap-4">
                                                 <div className="flex flex-wrap gap-3 items-center">
                                                     <a href="大宗郵政跨行匯款_合併列印.docx" className="inline-flex items-center justify-center gap-2 bg-purple-100 text-purple-700 px-4 py-3 rounded-lg font-bold hover:bg-purple-200 transition-colors border border-purple-200 w-fit">
-                                                        <IconDownload />  下載合併列印範本檔 (.docx)
+                                                        <IconDownload /> 下載官方範本檔 (.docx)
                                                     </a>
-                                                    <a href="http://www.post.gov.tw/post/internet/Download/all_list.jsp?ID=2201#dl_link_512" target="_blank" rel="noopener noreferrer" class="text-purple-600 hover:text-purple-800 underline text-sm flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"></path></svg> 原始檔案來源 (中華郵政)</a>
                                                 </div>
                                                 <div className="text-sm text-gray-500">
-                                                    * 若使用「自動生成」按鈕，無需手動合併列印。
+                                                    * 若使用新的「自動生成」按鈕，您只需準備一個命名為 <code>template.docx</code> 的範本檔放在同目錄下即可，無需手動合併列印。
                                                 </div>
                                                 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
